@@ -1,0 +1,6 @@
+# Optional: requires the full source checkout. Default compose.yaml only pulls.
+services:
+  lab:
+    image: justwats-jupyterlab:local
+    build: .
+    pull_policy: build

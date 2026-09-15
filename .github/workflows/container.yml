@@ -20,7 +20,12 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.lock pytest && pip install --no-deps .
       - run: python -m pytest -q
-      - run: docker compose config --quiet && docker compose -f compose.yaml -f compose.gpu.yaml config --quiet
+      - name: Validate Compose configurations
+        run: |
+          docker compose config --quiet
+          docker compose -f compose.yaml -f compose.gpu.yaml config --quiet
+          docker compose -f compose.yaml -f compose.build.yaml config --quiet
+          docker compose -f compose.yaml -f compose.build.yaml -f compose.gpu.yaml config --quiet
       - run: docker build -t lab:test .
       - run: bash scripts/smoke-container.sh lab:test
   publish:

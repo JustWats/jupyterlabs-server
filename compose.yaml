@@ -2,7 +2,6 @@ name: justwats-lab
 services:
   lab:
     image: ${LAB_IMAGE:-ghcr.io/justwats/jupyterlabs-server:latest}
-    build: .
     ports:
       - "${LAB_BIND:-127.0.0.1}:${LAB_PORT:-8888}:8888"
     volumes:

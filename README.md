@@ -3,43 +3,82 @@
 A single-user JupyterLab container with hardware assessment, editable Python
 presets, a setup notebook, and an optional local Dask CPU worker pool.
 
-## Start in two commands
+## Start with Docker Compose
 
-Requires Docker on a Linux x86-64 host. Once the GitHub Actions image publication
-has completed and the GHCR package is public:
-
-```bash
-docker run -d --name jupyterlab --restart unless-stopped -p 127.0.0.1:8888:8888 --shm-size=2g -v jupyterlab-home:/home/jovyan ghcr.io/justwats/jupyterlabs-server:latest
-docker logs jupyterlab
-```
-
-Open the token URL from the logs, using `http://localhost:8888/lab` as the address.
-The first command pulls the image automatically. A fresh volume receives
-`00-Setup.ipynb`, `lab_settings.py`, and `setup_lab.py`. Settings, notebooks,
-the generated token, and user-installed Python packages persist in the volume.
-Never delete that volume unless you intend to delete its contents.
-
-For NVIDIA GPU access, add `--gpus all` to the first command. The host needs
-a working NVIDIA driver and NVIDIA Container Toolkit configured for Docker.
-The container cannot install host drivers or expose devices to itself.
-
-For a remote server, establish `ssh -L 8888:127.0.0.1:8888 USER@SERVER` from
-your workstation, then use localhost in your browser. Publishing to localhost
-keeps the notebook off the public network. Token authentication is enabled.
-Do not share the token. This is a single-user server, not JupyterHub.
-
-## Start from source before image publication
-
-Inside this downloaded project directory:
+Requires Docker Engine and Docker Compose v2 on a Linux x86-64 host.
+The published image is public; no GitHub login or source build is needed.
+Download just the Compose file, start JupyterLab, then retrieve its login URL:
 
 ```bash
-docker compose up -d --build
+curl -fsSLO https://raw.githubusercontent.com/JustWats/jupyterlabs-server/main/compose.yaml
+docker compose up -d
 docker compose logs lab
 ```
 
-For NVIDIA, use `docker compose -f compose.yaml -f compose.gpu.yaml up -d --build`
-instead of the first command. After image publication, use `up -d --pull always`
-instead of `--build`. Compose requires Docker Compose v2.
+If you already downloaded or cloned this repository, only the last two commands
+are needed. `docker compose up -d` pulls the image when needed and starts it.
+Open the token URL from the logs at `http://localhost:8888/lab`.
+
+A fresh volume receives `00-Setup.ipynb`, `lab_settings.py`, and `setup_lab.py`.
+Settings, notebooks, the generated token, and user-installed Python packages
+persist in the `justwats-lab_lab-home` volume. `docker compose down` stops and
+removes the container while preserving the volume. `docker compose down -v`
+deletes the volume and its contents.
+
+### NVIDIA GPU access
+
+Download the base file and GPU override in one command:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/JustWats/jupyterlabs-server/main/compose.yaml -O https://raw.githubusercontent.com/JustWats/jupyterlabs-server/main/compose.gpu.yaml
+docker compose -f compose.yaml -f compose.gpu.yaml up -d
+docker compose logs lab
+```
+
+The host needs a working NVIDIA driver and NVIDIA Container Toolkit configured
+for Docker. The container cannot install host drivers or expose devices to itself.
+Use both `-f` arguments for subsequent GPU updates and container recreation.
+
+### Remote access and Compose settings
+
+For a remote server, establish `ssh -L 8888:127.0.0.1:8888 USER@SERVER` from
+your workstation, then use localhost in your browser. Token authentication is
+enabled. Do not share the token. This is a single-user server, not JupyterHub.
+
+Optional settings can go in a `.env` file beside `compose.yaml`:
+
+```dotenv
+LAB_IMAGE=ghcr.io/justwats/jupyterlabs-server:latest
+LAB_BIND=127.0.0.1
+LAB_PORT=8888
+LAB_SHM_SIZE=2gb
+```
+
+To listen directly on a server's network interface, set `LAB_BIND` to that
+interface's IP address, or `0.0.0.0` for all IPv4 interfaces. Use HTTPS through
+an authenticated reverse proxy or a trusted network for direct remote access.
+Python resource settings remain in `lab_settings.py` inside JupyterLab.
+
+If migrating from the earlier `docker run` example, stop the old `jupyterlab`
+container first to release port 8888. To reuse its notebooks, add
+`name: jupyterlab-home` under the top-level `volumes: lab-home:` entry before
+starting Compose. Otherwise Compose creates its own separate home volume.
+
+### Updates and optional source builds
+
+Update the published image and recreate the service with
+`docker compose up -d --pull always`. Existing notebooks and settings persist.
+For NVIDIA, include `-f compose.yaml -f compose.gpu.yaml` in that command.
+
+The default Compose file only uses the published image. To build a modified
+source checkout, include the build override:
+
+```bash
+docker compose -f compose.yaml -f compose.build.yaml up -d --build
+docker compose logs lab
+```
+
+For a local GPU build, add `-f compose.gpu.yaml` after the build override.
 
 ## Configuration inside Jupyter
 
