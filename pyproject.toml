@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=75,<83"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "justwats-labkit"
+version = "0.1.0"
+description = "Container-aware hardware assessment and editable JupyterLab presets"
+requires-python = ">=3.12"
+dependencies = ["threadpoolctl>=3.5,<4"]
+
+[tool.setuptools.packages.find]
+include = ["labkit*"]
+
+[tool.pytest.ini_options]
+markers = ["process_integration: requires normal Linux process and ZeroMQ networking support"]

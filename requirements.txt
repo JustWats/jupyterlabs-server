@@ -1,0 +1,12 @@
+jupyterlab>=4.4,<5
+jupyter-server>=2.17,<3
+ipykernel>=6.30,<8
+numpy>=2.2,<3
+pandas>=2.2,<4
+scipy>=1.15,<2
+matplotlib>=3.10,<4
+dask[distributed]>=2025.7,<2027
+psutil>=7,<8
+threadpoolctl>=3.5,<4
+ipywidgets>=8.1,<9
+pyarrow>=20,<24

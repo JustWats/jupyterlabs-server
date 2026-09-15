@@ -1,0 +1,17 @@
+name: justwats-lab
+services:
+  lab:
+    image: ${LAB_IMAGE:-ghcr.io/justwats/jupyterlabs-server:latest}
+    build: .
+    ports:
+      - "${LAB_BIND:-127.0.0.1}:${LAB_PORT:-8888}:8888"
+    volumes:
+      - lab-home:/home/jovyan
+    shm_size: ${LAB_SHM_SIZE:-2gb}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  lab-home:
