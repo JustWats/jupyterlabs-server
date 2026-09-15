@@ -1,5 +1,26 @@
 # Validation record
 
+## GitHub CI qualification
+
+[Run 34970151332](https://github.com/JustWats/jupyterlabs-server/actions/runs/34970151332)
+qualified source commit `535e5736c4a11660dffeb164ef1a39e0947db7a2` on
+2026-09-15 using an Ubuntu GitHub-hosted runner:
+
+- Full Python suite: **27 passed**, including a real Dask worker and execution
+  through a separate Jupyter kernel.
+- Docker Compose CPU and NVIDIA configurations: passed schema validation.
+- Docker image build: passed.
+- GHCR publication: passed. Published `latest` and the full source-commit tag.
+- Published image digest: `sha256:404267c4750730cfa35b6d64a1f2ad8bbe6b977d5babca2af13f22e43eae2d3f`.
+- Container smoke: passed health, UID 1000 execution, token authentication,
+  enforced 4 GiB / 2 CPU limits, and persistent settings across restart.
+
+Physical NVIDIA GPU execution and 1 TiB physical hardware remain untested.
+Large-memory and GPU inventory cases use synthetic fixtures as detailed below.
+
+The following sections preserve the earlier local runtime results; their
+process and Docker limitations were resolved by the CI qualification above.
+
 Date: 2026-09-15. Python 3.12, Linux x86-64 development runtime.
 
 ## Passed
