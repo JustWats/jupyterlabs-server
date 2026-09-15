@@ -8,6 +8,8 @@ qualified source commit `d8ac315ccd869df96ceff1631a09800d24fc6cd7`:
 - Full Python suite: **43 passed**, including managed-job timeout, RAM budget
   exhaustion, subsequent-job recovery, and mutual exclusion with Dask pools.
 - All four Compose configurations passed validation.
+- GHCR publication passed; anonymous access to the latest manifest was verified.
+- Published image digest: `sha256:34eb94161db99407b32f410d5f6e0f235798dbd1e8904a016f22b2bdf0671d7a`.
 - Docker image built and actual Compose deployment passed health/authentication
   and persistence checks, including assertions on 4 GiB RAM, 2 CPUs, disabled
   swap, 1,024 PIDs, and a bounded spill tmpfs.
