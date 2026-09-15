@@ -30,6 +30,9 @@ def test_real_worker(tmp_path, monkeypatch):
     report = configure(tmp_path / "lab_settings.py")
     cluster, client = start_cluster(report)
     try:
+        from labkit import run_analysis
+        with pytest.raises(RuntimeError, match='Another managed'):
+            run_analysis(lambda: None)
         assert client.submit(sum, [1, 2, 3]).result(timeout=30) == 6
         workers = client.scheduler_info()["workers"]
         assert len(workers) == 1
@@ -52,13 +55,14 @@ def test_notebook_cells_in_process(tmp_path, monkeypatch):
     from IPython.core.interactiveshell import InteractiveShell
     prepare_workspace(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)
-    notebook = nbformat.read(tmp_path / "00-Setup.ipynb", as_version=4)
-    nbformat.validate(notebook)
     shell = InteractiveShell()
-    for cell in notebook.cells:
-        if cell.cell_type == "code":
-            result = shell.run_cell(cell.source)
-            assert result.success, str(result.error_in_exec or result.error_before_exec)
+    for name in ('00-Setup.ipynb', '01-Managed-Analysis.ipynb'):
+        notebook = nbformat.read(tmp_path / name, as_version=4)
+        nbformat.validate(notebook)
+        for cell in notebook.cells:
+            if cell.cell_type == "code":
+                result = shell.run_cell(cell.source)
+                assert result.success, str(result.error_in_exec or result.error_before_exec)
     assert json.loads((tmp_path / "hardware_report.json").read_text())["plan"]["workers"] == 1
 
 

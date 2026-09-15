@@ -5,6 +5,7 @@ import secrets
 import shutil
 from pathlib import Path
 from .hardware import assess
+from .safety import validate_host_limits
 
 
 def seed(source, destination):
@@ -37,6 +38,8 @@ def main():
     # Server config reads a private token file; do not put the token on argv.
     os.environ["LAB_TOKEN_PATH"] = str(token_path)
     inventory = assess(workspace)
+    if os.environ.get('LAB_REQUIRE_LIMITS', '1') == '1':
+        validate_host_limits(inventory)
     (workspace / "hardware_inventory.json").write_text(json.dumps(inventory, indent=2) + "\n")
     print(f"Hardware: {inventory['cpu']['effective_cores']:g} effective CPU cores, "
           f"{inventory['memory']['effective_total_bytes'] / 1024**3:.1f} GiB RAM, "

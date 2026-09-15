@@ -89,16 +89,36 @@ def configure(config_path=None, write_report=True):
 def start_cluster(report):
     """Explicit opt-in: starts CPU Dask processes, never GPU or model workers."""
     from distributed import Client, LocalCluster
-    selected = report["plan"]
+    from .safety import AnalysisLease
+    from distributed.core import Status
+    import dask
+    lease = AnalysisLease()
     workspace = Path(os.environ.get("LAB_WORKSPACE", "/home/jovyan/work"))
-    cluster = LocalCluster(n_workers=selected["workers"],
-        threads_per_worker=selected["threads_per_worker"],
-        memory_limit=selected["memory_per_worker_bytes"], processes=True,
-        host="127.0.0.1", dashboard_address=None,
-        local_directory=str(workspace / ".dask-spill"))
+    class LeasedCluster(LocalCluster):
+        def close(self, *args, **kwargs):
+            result = super().close(*args, **kwargs)
+            if self.status == Status.closed:
+                lease.close()
+            return result
     try:
-        client = Client(cluster)
+        selected = plan(assess(workspace), dict(preset=report['plan']['preset'], **report['plan']['options']))
+        spill = Path(os.environ.get('LAB_SPILL_DIR', str(workspace / '.dask-spill')))
+        spill.mkdir(parents=True, exist_ok=True)
+        with dask.config.set({'distributed.worker.memory.target': 0.55,
+                              'distributed.worker.memory.spill': 0.65,
+                              'distributed.worker.memory.pause': 0.75,
+                              'distributed.worker.memory.terminate': 0.85,
+                              'distributed.worker.memory.max-spill': (512 * 1024**2) // selected['workers']}):
+            cluster = LeasedCluster(n_workers=selected["workers"],
+                threads_per_worker=selected["threads_per_worker"],
+                memory_limit=selected["memory_per_worker_bytes"], processes=True,
+                host="127.0.0.1", dashboard_address=None, local_directory=str(spill))
+        try:
+            client = Client(cluster)
+        except Exception:
+            cluster.close()
+            raise
     except Exception:
-        cluster.close()
+        lease.close()
         raise
     return cluster, client

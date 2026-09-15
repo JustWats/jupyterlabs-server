@@ -1,16 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 image="${1:-lab:test}"
-container="lab-smoke-${RANDOM}"
-volume="${container}-home"
+project="lab-smoke-${RANDOM}"
+export LAB_IMAGE="$image" LAB_PORT=0 LAB_BIND=127.0.0.1
+export LAB_CPU_LIMIT=2.0 LAB_MEMORY_LIMIT=4g LAB_PIDS_LIMIT=1024
 cleanup() {
-  docker rm -f "$container" >/dev/null 2>&1 || true
-  docker volume rm "$volume" >/dev/null 2>&1 || true
+  docker compose -p "$project" down -v >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
-docker volume create "$volume" >/dev/null
-docker run -d --name "$container" --memory=4g --cpus=2 --shm-size=256m \
-  -v "$volume:/home/jovyan" "$image" >/dev/null
+docker compose -p "$project" up -d --pull never
+container="$(docker compose -p "$project" ps -q lab)"
+docker inspect "$container" --format '{{json .HostConfig}}' | python -c '
+import json, sys
+c = json.load(sys.stdin)
+assert c["Memory"] == 4 * 1024**3
+assert c["MemorySwap"] == c["Memory"]
+assert c["NanoCpus"] == 2 * 10**9
+assert c["PidsLimit"] == 1024
+assert "/tmp/lab-spill" in c["Tmpfs"]
+'
 for attempt in $(seq 1 60); do
   state="$(docker inspect --format '{{.State.Health.Status}}' "$container")"
   if [[ "$state" == healthy ]]; then break; fi
@@ -38,9 +46,22 @@ except urllib.error.HTTPError as error:
 token = (Path.home() / '.local/share/labkit/token').read_text().strip()
 request = urllib.request.Request(base + '/api/contents', headers={'Authorization': 'token ' + token})
 assert urllib.request.urlopen(request).status == 200
+from labkit import run_analysis
+def oversized():
+    import time
+    data = bytearray(256 * 1024**2)
+    time.sleep(5)
+    return len(data)
+try:
+    run_analysis(oversized, ram_gib=.125, timeout_s=20)
+    raise AssertionError('Oversized managed analysis was not stopped')
+except MemoryError:
+    pass
+assert run_analysis(lambda: 6 * 7, ram_gib=.25) == 42
+assert urllib.request.urlopen(request).status == 200
 with Path('lab_settings.py').open('a') as file:
     file.write('\n# persistence smoke marker\n')
 PY
 docker restart "$container" >/dev/null
 docker exec "$container" python -c "from pathlib import Path; assert 'persistence smoke marker' in Path('lab_settings.py').read_text()"
-echo 'Container smoke passed: health, non-root, authentication, CPU/RAM limits, persistent settings.'
+echo 'Container smoke passed: health, non-root, authentication, CPU/RAM/swap/PID limits, bounded spill, managed OOM recovery, persistent settings.'

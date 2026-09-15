@@ -22,7 +22,9 @@ and paste the token from the logs into the login page. On the Docker host itself
 use `http://localhost:9999/lab`. Jupyter's own log URLs show its internal port
 8888; use the Docker host's IP and published port 9999 in your browser.
 
-A fresh volume receives `00-Setup.ipynb`, `lab_settings.py`, and `setup_lab.py`.
+A fresh volume receives `00-Setup.ipynb`, `lab_settings.py`, `setup_lab.py`,
+`01-Managed-Analysis.ipynb`, and `analysis_settings.py`. New starter files are
+also added to existing volumes when missing, without replacing edited files.
 Settings, notebooks, the generated token, and user-installed Python packages
 persist in the `justwats-lab_lab-home` volume. `docker compose down` stops and
 removes the container while preserving the volume. `docker compose down -v`
@@ -59,6 +61,10 @@ LAB_IMAGE=ghcr.io/justwats/jupyterlabs-server:latest
 LAB_BIND=0.0.0.0
 LAB_PORT=9999
 LAB_SHM_SIZE=2gb
+LAB_MEMORY_LIMIT=4g
+LAB_CPU_LIMIT=2.0
+LAB_PIDS_LIMIT=1024
+LAB_GPU_DEVICE=0
 ```
 
 To restrict listening to one interface, set `LAB_BIND` to its IP address.
@@ -103,6 +109,101 @@ For a local GPU build, add `-f compose.gpu.yaml` after the build override.
 
 ## Configuration inside Jupyter
 
+### Protect the host and select an analysis backend
+
+Compose now enforces a **4 GiB total RAM limit**, a **2-CPU quota**, **no swap**,
+and a **1,024 process/thread limit** by default. These limits cover Jupyter,
+every kernel, terminals, and all their workers together. They apply even when
+a notebook ignores the Python helper. Logs rotate at 10 MiB with three files.
+Dask spill uses a 512 MiB tmpfs charged against the RAM cap, avoiding unbounded
+spill writes onto the host disk. User notebooks and arbitrary output files on
+the persistent home volume still need filesystem quotas if a hard disk limit
+is required.
+
+At startup the image refuses missing Docker CPU/RAM caps or a RAM allowance
+that leaves less than both 20% and 2 GiB of the visible host/VM outside Jupyter.
+The CPU quota must leave at least 25% of visible host/VM CPU capacity. These
+checks do not reserve resources against unrelated applications on the host.
+The default allocation requires at least about 6 GiB RAM and 3 logical CPUs;
+reduce `.env` limits for smaller machines. Kernel/cgroup support is required.
+
+To assign more capacity on a large server, edit the host `.env`, then recreate:
+
+```dotenv
+# Example for a 1 TiB, 256-logical-CPU host with sufficient free capacity:
+LAB_MEMORY_LIMIT=768g
+LAB_CPU_LIMIT=192
+LAB_PIDS_LIMIT=4096
+```
+
+```bash
+docker compose up -d --pull always --force-recreate
+```
+
+The notebook worker budget must fit *inside* this container allowance. For
+example, a 768 GiB container does not support a 768 GiB Dask worker budget plus
+Jupyter overhead. Keep `memory_gib=None` to derive the inner budget automatically.
+Existing deployments must download the new Compose file **and** pull the new
+image to gain all protections. Changing only Python settings cannot set Docker
+limits. Direct `docker run` users must provide `--memory`, `--memory-swap` equal
+to that memory value, `--cpus`, and `--pids-limit` explicitly.
+
+Open **01-Managed-Analysis.ipynb** for the guarded execution path. Edit
+`analysis_settings.py` to select `cpu`, `cupy`, or `torch` and set job budgets:
+
+```python
+from labkit import run_analysis
+
+def statistics():
+    import numpy as np
+    values = np.random.default_rng(42).normal(size=100_000)
+    return {'mean': float(values.mean()), 'std': float(values.std())}
+
+result = run_analysis(statistics, backend='cpu', ram_gib=1, threads=1)
+```
+
+The runner starts a disposable process, checks its process-tree RSS and live
+available RAM every 0.2 seconds, and kills the job's process group on budget
+exhaustion, timeout, or interruption. Default timeout is 15 minutes. The worker
+also has an expiry timer if its parent kernel disappears. A shared home lock
+allows one managed job **or** one managed Dask pool at a time across kernels.
+Closing the Dask cluster releases its lock. Separate Docker home volumes have
+separate locks, so assign their aggregate host budgets yourself.
+
+Pass dataset paths instead of large in-memory arguments. Transfer input/output
+is capped at the smaller of 64 MiB (configurable) and one quarter of the job RAM
+budget. Worker-created files, including stderr, have that same per-file limit.
+Worker stdout is discarded; return a small summary to the notebook. Large
+files should be handled through a separate, deliberately budgeted workflow.
+
+The NVIDIA Compose override exposes **one host GPU**, selected with
+`LAB_GPU_DEVICE` (index, GPU UUID, or a host-provisioned MIG device ID).
+`device=0` in Python refers to the first device visible *inside* the container.
+Install the chosen GPU framework and import it inside the analysis callable.
+The worker queries current free/total VRAM on that CUDA device before running
+user code, including the actual slice when using MIG. No CPU or alternate-GPU
+fallback occurs if the selected backend is unavailable.
+
+GPU jobs default to at most **50% of visible VRAM**, while leaving **1 GiB of
+currently free VRAM** outside the requested budget. `vram_gib` can request a
+smaller explicit ceiling; `gpu_fraction` cannot exceed 0.80. PyTorch's caching
+allocator or CuPy's default memory pool receives the resulting limit before
+the callable loads. Return host-side data using `.cpu()` or `.get()`; CUDA
+objects cannot be returned to the notebook. Process exit releases its GPU
+context and allocations.
+
+**Limits of the protection:** RAM monitoring is sampled and can be outrun by a
+rapid allocation. Docker provides the aggregate hard boundary, and an OOM can
+still kill a kernel or container. Framework GPU limits exclude CUDA context
+overhead and allocations made through other libraries/custom allocators. They
+do **not** impose a percentage GPU compute-utilization limit. Use a dedicated
+GPU or host-configured MIG slice for GPU resource isolation. Arbitrary notebook
+code can bypass Python helpers; this is not a security sandbox or a guarantee
+against driver faults, host disk exhaustion, or other applications exhausting
+the host. CPU jobs should use chunked datasets; GPU jobs should use batches.
+
+### Optional Dask pool presets
+
 1. Open `00-Setup.ipynb` and run the first cell.
 2. Edit `lab_settings.py`, save it, and rerun `%run setup_lab.py`.
 3. Optionally set `START_CLUSTER = True` in the notebook to start CPU workers.
@@ -139,12 +240,13 @@ current availability after the reserve. It fails clearly if less than one
 worker fits; Jupyter itself still starts on smaller systems. Lower the reserve
 and minimum worker budget for a small container.
 
-For example, on an otherwise idle 1 TiB machine with 256 effective logical CPUs:
+For example, after assigning 768 GiB and 192 CPUs of a 1 TiB / 256-CPU host
+to this container:
 
 ```python
 SETTINGS = {
     'preset': 'throughput',
-    'memory_gib': 768,
+    'memory_gib': None,
     'reserve_gib': 32,
     'max_workers': 128,
     'threads_per_worker': 2,
@@ -152,8 +254,8 @@ SETTINGS = {
 }
 ```
 
-This plans 121 workers with a combined 768 GiB memory budget if the reported
-available capacity permits it. These are capacity-based presets, not benchmarked
+This plans up to 91 workers with a combined 614.4 GiB memory budget if the
+reported available capacity permits it. These are capacity-based presets, not benchmarked
 optimal settings. Raise BLAS threads and lower process counts for suitable dense
 linear algebra workloads; use processes for Python CPU work that is GIL-bound.
 Single-kernel Python code does not automatically become parallel.
@@ -177,14 +279,16 @@ GPU report. AMD/Intel GPU VRAM assessment is not implemented in this version.
 No privileged mode, Docker socket mount, host filesystem mount, or host IPC is
 needed. Python knobs cannot increase Docker limits. Configure `--memory`,
 `--cpus`, `--cpuset-cpus`, or Compose equivalents on the host when needed.
-The default container has no explicit Docker CPU/RAM cap. `--shm-size=2g` is a
-shared-memory ceiling, not a preallocation or the container's total RAM limit.
+The default Compose caps are described above. `shm_size=2gb` is a shared-memory
+ceiling, not a preallocation; shared-memory use counts against container RAM.
 
-Dask worker memory limits are best effort, using Dask's spill/pause/restart
-behavior; they are not a hard cap on an arbitrary notebook process. Spill uses
-`work/.dask-spill` and consumes disk. Separate clusters/kernels can oversubscribe
-one another. GPU budgets do not reserve VRAM, change framework allocators, or
-infer a safe model batch size. This package does not perform NUMA placement.
+Dask worker memory limits are best effort: target 55%, spill 65%, pause 75%,
+and terminate/restart a worker at 85% of its budget. Each pool refreshes its
+hardware assessment before starting. Compose directs spill into bounded tmpfs;
+outside Compose, the fallback is `work/.dask-spill`, with a 512 MiB managed-spill
+budget split across workers. The inventory report's GPU budgets remain advisory;
+use `run_analysis` for supported allocator limits. No automatic model batch-size
+inference or NUMA placement is performed.
 
 ## Included packages and optional GPU frameworks
 
@@ -213,7 +317,8 @@ toolkit. Add those in a derived image if your workload requires compilation.
   New starter examples remain available at `/opt/lab-starter` inside the image.
 - Back up the entire home volume before upgrades. Bind-mounted homes must be
   writable by UID/GID 1000. Named volumes initialize ownership automatically.
-- Compose accepts `LAB_IMAGE`, `LAB_PORT`, `LAB_BIND`, and `LAB_SHM_SIZE`.
+- Compose settings are listed in `.env.example`, including CPU/RAM/PID limits
+  and the selected NVIDIA device.
 - Use an image digest for repeatable deployment instead of the moving `latest`
   tag. The Debian/Python base tag and OS packages are resolved at build time.
 
@@ -257,3 +362,7 @@ With Docker available: `docker build -t lab:test .`, then
 - [Dask worker memory behavior](https://distributed.dask.org/en/stable/worker-memory.html)
 - [GitHub container image publication](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images)
 - [GHCR package visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)
+- [Docker resource limits](https://docs.docker.com/engine/containers/resource_constraints/)
+- [PyTorch CUDA allocator implementation](https://github.com/pytorch/pytorch/blob/main/torch/cuda/memory.py)
+- [CuPy pool limits and exclusions](https://docs.cupy.dev/en/stable/user_guide/memory.html)
+- [NVIDIA MIG isolation](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/introduction.html)

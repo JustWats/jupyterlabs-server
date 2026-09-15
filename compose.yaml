@@ -2,6 +2,20 @@ name: justwats-lab
 services:
   lab:
     image: ${LAB_IMAGE:-ghcr.io/justwats/jupyterlabs-server:latest}
+    cpus: ${LAB_CPU_LIMIT:-2.0}
+    mem_limit: ${LAB_MEMORY_LIMIT:-4g}
+    memswap_limit: ${LAB_MEMORY_LIMIT:-4g}
+    pids_limit: ${LAB_PIDS_LIMIT:-1024}
+    environment:
+      LAB_REQUIRE_LIMITS: "1"
+      LAB_SPILL_DIR: /tmp/lab-spill
+    tmpfs:
+      - /tmp/lab-spill:size=536870912,mode=1777
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "${LAB_BIND:-0.0.0.0}:${LAB_PORT:-9999}:8888"
     volumes:
