@@ -3,7 +3,7 @@ services:
   lab:
     image: ${LAB_IMAGE:-ghcr.io/justwats/jupyterlabs-server:latest}
     ports:
-      - "${LAB_BIND:-127.0.0.1}:${LAB_PORT:-8888}:8888"
+      - "${LAB_BIND:-0.0.0.0}:${LAB_PORT:-9999}:8888"
     volumes:
       - lab-home:/home/jovyan
     shm_size: ${LAB_SHM_SIZE:-2gb}

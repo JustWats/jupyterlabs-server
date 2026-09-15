@@ -7,7 +7,7 @@ presets, a setup notebook, and an optional local Dask CPU worker pool.
 
 Requires Docker Engine and Docker Compose v2 on a Linux x86-64 host.
 The published image is public; no GitHub login or source build is needed.
-Download just the Compose file, start JupyterLab, then retrieve its login URL:
+Download just the Compose file, start JupyterLab, then retrieve its login token:
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/JustWats/jupyterlabs-server/main/compose.yaml
@@ -17,7 +17,10 @@ docker compose logs lab
 
 If you already downloaded or cloned this repository, only the last two commands
 are needed. `docker compose up -d` pulls the image when needed and starts it.
-Open the token URL from the logs at `http://localhost:8888/lab`.
+From another machine on the same network, open `http://<server-ip>:9999/lab`
+and paste the token from the logs into the login page. On the Docker host itself,
+use `http://localhost:9999/lab`. Jupyter's own log URLs show its internal port
+8888; use the Docker host's IP and published port 9999 in your browser.
 
 A fresh volume receives `00-Setup.ipynb`, `lab_settings.py`, and `setup_lab.py`.
 Settings, notebooks, the generated token, and user-installed Python packages
@@ -41,30 +44,48 @@ Use both `-f` arguments for subsequent GPU updates and container recreation.
 
 ### Remote access and Compose settings
 
-For a remote server, establish `ssh -L 8888:127.0.0.1:8888 USER@SERVER` from
-your workstation, then use localhost in your browser. Token authentication is
-enabled. Do not share the token. This is a single-user server, not JupyterHub.
+Compose publishes TCP port 9999 on all host IPv4 interfaces by default, forwarding
+it to Jupyter's internal port 8888. Same-subnet clients can connect directly;
+no SSH tunnel or extra Compose override is needed. Token authentication remains
+enabled. This is a single-user server, not JupyterHub.
+
+The host firewall and any network ACLs must permit client traffic to TCP 9999.
+Compose cannot override an independently configured firewall or subnet isolation.
 
 Optional settings can go in a `.env` file beside `compose.yaml`:
 
 ```dotenv
 LAB_IMAGE=ghcr.io/justwats/jupyterlabs-server:latest
-LAB_BIND=127.0.0.1
-LAB_PORT=8888
+LAB_BIND=0.0.0.0
+LAB_PORT=9999
 LAB_SHM_SIZE=2gb
 ```
 
-To listen directly on a server's network interface, set `LAB_BIND` to that
-interface's IP address, or `0.0.0.0` for all IPv4 interfaces. Use HTTPS through
-an authenticated reverse proxy or a trusted network for direct remote access.
+To restrict listening to one interface, set `LAB_BIND` to its IP address.
+For host-only access, set `LAB_BIND=127.0.0.1`. An existing `.env` or exported
+`LAB_BIND`/`LAB_PORT` value overrides the defaults even after updating compose.yaml.
+Use HTTPS through a reverse proxy when access must traverse an untrusted network.
 Python resource settings remain in `lab_settings.py` inside JupyterLab.
 
 If migrating from the earlier `docker run` example, stop the old `jupyterlab`
-container first to release port 8888. To reuse its notebooks, add
+container before sharing its home volume. To reuse its notebooks, add
 `name: jupyterlab-home` under the top-level `volumes: lab-home:` entry before
 starting Compose. Otherwise Compose creates its own separate home volume.
 
 ### Updates and optional source builds
+
+To update an existing Compose deployment from localhost:8888 to LAN access on
+port 9999, download the current Compose file and recreate the service:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/JustWats/jupyterlabs-server/main/compose.yaml
+docker compose up -d --force-recreate
+docker compose logs lab
+```
+
+The existing Compose home volume and login token are preserved. If you set
+`LAB_BIND` or `LAB_PORT` previously, update those overrides as well. For NVIDIA,
+include `-f compose.yaml -f compose.gpu.yaml` in the recreation command.
 
 Update the published image and recreate the service with
 `docker compose up -d --pull always`. Existing notebooks and settings persist.
