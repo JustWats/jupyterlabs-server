@@ -1,5 +1,26 @@
 # Validation record
 
+## Resource protection qualification (0.2.0)
+
+[Run 35032593977](https://github.com/JustWats/jupyterlabs-server/actions/runs/35032593977)
+qualified source commit `d8ac315ccd869df96ceff1631a09800d24fc6cd7`:
+
+- Full Python suite: **43 passed**, including managed-job timeout, RAM budget
+  exhaustion, subsequent-job recovery, and mutual exclusion with Dask pools.
+- All four Compose configurations passed validation.
+- Docker image built and actual Compose deployment passed health/authentication
+  and persistence checks, including assertions on 4 GiB RAM, 2 CPUs, disabled
+  swap, 1,024 PIDs, and a bounded spill tmpfs.
+- An oversized managed analysis process was stopped; a subsequent job returned
+  successfully and the authenticated Jupyter HTTP endpoint remained responsive.
+- GPU selection, live-free-memory budgeting, and PyTorch/CuPy allocator API calls
+  were tested with simulated devices. No physical GPU execution test was run.
+
+The resource protections reduce host exhaustion risk. They do not isolate GPU
+compute percentages or guarantee immunity to host disk exhaustion, driver
+faults, unrelated host workloads, or arbitrary code bypassing Python helpers.
+See README.md for hard Docker limits versus sampled/framework-level guards.
+
 ## GitHub CI qualification
 
 [Run 34970151332](https://github.com/JustWats/jupyterlabs-server/actions/runs/34970151332)
