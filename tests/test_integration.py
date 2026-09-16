@@ -102,6 +102,43 @@ def test_jupyter_http_authentication(tmp_path):
             request = urllib.request.Request(base + "/api/contents", headers={"Authorization": "token " + token})
             result = json.load(urllib.request.urlopen(request))
             assert "00-Setup.ipynb" in [item["name"] for item in result["content"]]
+
+            # Fetch the actual frontend, then every script and stylesheet it references.
+            # A login page or JSON API response alone does not validate the Lab interface.
+            from html.parser import HTMLParser
+            from urllib.parse import urljoin, urlsplit
+            class Assets(HTMLParser):
+                def __init__(self):
+                    super().__init__()
+                    self.urls = []
+                def handle_starttag(self, tag, attrs):
+                    attrs = dict(attrs)
+                    if tag == 'script' and attrs.get('src'):
+                        self.urls.append(attrs['src'])
+                    if tag == 'link' and 'stylesheet' in attrs.get('rel', '').split():
+                        self.urls.append(attrs['href'])
+            def authenticated_get(url):
+                req = urllib.request.Request(url, headers={'Authorization': 'token ' + token})
+                return urllib.request.urlopen(req, timeout=30)
+            with authenticated_get(base + '/lab') as response:
+                assert response.status == 200
+                assert urlsplit(response.url).path == '/lab', response.url
+                html = response.read().decode()
+            assert 'jupyter-config-data' in html
+            assets = Assets()
+            assets.feed(html)
+            assert any('.js' in urlsplit(url).path for url in assets.urls), 'No frontend JavaScript found'
+            for asset in assets.urls:
+                url = urljoin(base + '/lab', asset)
+                assert urlsplit(url).netloc == urlsplit(base).netloc, url
+                with authenticated_get(url) as response:
+                    assert response.status == 200, url
+                    assert 'text/html' not in response.headers.get('Content-Type', ''), url
+                    assert response.read(), url
+            print(f'JupyterLab HTML and {len(assets.urls)} frontend assets passed')
+        except Exception:
+            print((tmp_path / "server.log").read_text())
+            raise
         finally:
             server.terminate()
             try:

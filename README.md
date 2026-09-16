@@ -348,7 +348,10 @@ and these examples. The workflow derives its publication name automatically.
 
 The image installs the complete pinned `requirements.lock`, including Tornado,
 JupyterLab, Jupyter Server, the Python kernel, widgets, and their dependencies.
-Tornado is also declared explicitly in `requirements.txt`. Image builds fail if
+Tornado is pinned to 6.5.10, which fixes the 6.5.9 static-file compatibility
+regression that prevented JupyterLab JavaScript from loading
+([upstream release notes](https://www.tornadoweb.org/en/stable/releases/v6.5.10.html)).
+It is also declared explicitly in `requirements.txt`. Image builds fail if
 `pip check` detects missing or incompatible dependencies, core UI imports fail,
 or the JupyterLab frontend assets are missing. Publication additionally requires
 HTTP checks of the authenticated Lab page and its referenced frontend assets.

@@ -5,6 +5,8 @@ project="lab-smoke-${RANDOM}"
 export LAB_IMAGE="$image" LAB_PORT=0 LAB_BIND=127.0.0.1
 export LAB_CPU_LIMIT=2.0 LAB_MEMORY_LIMIT=4g LAB_PIDS_LIMIT=1024
 cleanup() {
+  result=$?
+  if [[ "$result" != 0 ]]; then docker compose -p "$project" logs lab || true; fi
   docker compose -p "$project" down -v >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
