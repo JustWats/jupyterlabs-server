@@ -326,6 +326,8 @@ toolkit. Add those in a derived image if your workload requires compilation.
 
 Intended repository: `JustWats/jupyterlabs-server`, default branch `main`.
 The supplied workflow runs Python integration tests, builds the image, and
+checks installed dependency compatibility and serves the authenticated JupyterLab
+HTML and its referenced JavaScript/CSS assets from a fresh container. It also
 tests container authentication, non-root execution, persistence, and imposed
 CPU/RAM limits before a publication job can run. PRs never publish.
 Pushes to main publish `latest` and a full commit SHA tag; version tags publish
@@ -341,6 +343,31 @@ can prevent Actions or package publishing.
 
 If using another repository name, update the default image reference in Compose
 and these examples. The workflow derives its publication name automatically.
+
+## Included UI dependencies
+
+The image installs the complete pinned `requirements.lock`, including Tornado,
+JupyterLab, Jupyter Server, the Python kernel, widgets, and their dependencies.
+Tornado is also declared explicitly in `requirements.txt`. Image builds fail if
+`pip check` detects missing or incompatible dependencies, core UI imports fail,
+or the JupyterLab frontend assets are missing. Publication additionally requires
+HTTP checks of the authenticated Lab page and its referenced frontend assets.
+Optional CUDA frameworks remain separate installations as described above.
+
+To replace an existing Compose container with the latest published image:
+
+```bash
+docker compose pull lab
+docker compose up -d lab
+```
+
+For a source build, update the checkout with `git pull`, then run
+`docker compose -f compose.yaml -f compose.build.yaml up -d --build lab`.
+Use the same GPU override files as your original deployment when upgrading.
+The home volume and notebooks are retained. Packages installed with `--user`
+in that volume can override image packages; if an upgrade still fails, run
+`docker compose exec lab python -m pip check` and capture the server traceback
+with `docker compose logs lab` to identify the conflicting or missing package.
 
 ## Verification
 

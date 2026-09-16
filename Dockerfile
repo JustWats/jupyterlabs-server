@@ -18,7 +18,10 @@ RUN pip install --no-cache-dir -r /opt/build/requirements.lock \
     && pip freeze > /opt/build/installed-packages.txt
 COPY pyproject.toml /opt/labkit/pyproject.toml
 COPY labkit /opt/labkit/labkit
-RUN pip install --no-cache-dir --no-deps /opt/labkit
+RUN pip install --no-cache-dir --no-deps /opt/labkit \
+    && python -m pip check \
+    && python -c "import tornado.web, tornado.websocket, jupyterlab, jupyterlab_server, jupyter_server, ipykernel, ipywidgets, jinja2, zmq; from jupyterlab.commands import get_app_dir; from pathlib import Path; assert (Path(get_app_dir()) / 'static' / 'index.html').is_file(), 'JupyterLab frontend assets missing'" \
+    && pip freeze > /opt/build/installed-packages.txt
 COPY starter /opt/lab-starter
 COPY jupyter_server_config.py /opt/lab-config/jupyter_server_config.py
 RUN mkdir -p /home/jovyan/work && chown -R 1000:1000 /home/jovyan

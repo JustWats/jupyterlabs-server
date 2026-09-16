@@ -1,5 +1,7 @@
 jupyterlab>=4.4,<5
 jupyter-server>=2.17,<3
+# Explicit server/UI dependency; exact version is pinned in requirements.lock.
+tornado>=6.5.9,<7
 ipykernel>=6.30,<8
 numpy>=2.2,<3
 pandas>=2.2,<4

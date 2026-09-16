@@ -19,6 +19,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.lock pytest && pip install --no-deps .
+      - run: python -m pip check
       - run: python -m pytest -q
       - name: Validate Compose configurations
         run: |
